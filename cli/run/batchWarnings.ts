@@ -170,15 +170,16 @@ const deferredHandlers: {
 	},
 
 	PLUGIN_WARNING(warnings) {
-		const nestedByPlugin = nest(warnings, 'plugin');
+		const nestedByPlugin = nestByKey(warnings, 'plugin');
 
 		for (const { key: plugin, items } of nestedByPlugin) {
-			const nestedByMessage = nest(items, 'message');
+			const nestedByMessageAndPluginCode = nestByCompositeKey(items, ['message', 'pluginCode']);
 
 			let lastUrl = '';
 
-			for (const { key: message, items } of nestedByMessage) {
-				title(`Plugin ${plugin}: ${message}`);
+			for (const { key, items } of nestedByMessageAndPluginCode) {
+				const { message, pluginCode } = JSON.parse(key);
+				title(`Plugin ${plugin}: ${message}`, pluginCode);
 				for (const warning of items) {
 					if (warning.url && warning.url !== lastUrl) info((lastUrl = warning.url));
 
@@ -245,8 +246,8 @@ const deferredHandlers: {
 	}
 };
 
-function title(string_: string): void {
-	stderr(bold(yellow(`(!) ${string_}`)));
+function title(string_: string, subtitleString_ = ''): void {
+	stderr(bold(yellow(`(!) ${string_}`)) + (!subtitleString_ ? '' : gray(` (${subtitleString_})`)));
 }
 
 function info(url: string): void {
@@ -258,7 +259,10 @@ interface Nested<T> {
 	key: string;
 }
 
-function nest<T extends Record<string, any>>(array: readonly T[], property: string): Nested<T>[] {
+function nestByKey<T extends Record<string, any>>(
+	array: readonly T[],
+	property: string
+): Nested<T>[] {
 	const nested: Nested<T>[] = [];
 	const lookup = new Map<string, Nested<T>>();
 
@@ -277,8 +281,32 @@ function nest<T extends Record<string, any>>(array: readonly T[], property: stri
 	return nested;
 }
 
+function nestByCompositeKey<T extends Record<string, any>>(
+	array: readonly T[],
+	properties: string[]
+): Nested<T>[] {
+	const nested: Nested<T>[] = [];
+	const lookup = new Map<string, Nested<T>>();
+
+	for (const item of array) {
+		const compositeKey: any = {};
+		for (const property of properties) compositeKey[property] = item[property];
+		const stringifiedKey = JSON.stringify(compositeKey);
+		getOrCreate(lookup, stringifiedKey, () => {
+			const items = {
+				items: [],
+				key: stringifiedKey
+			};
+			nested.push(items);
+			return items;
+		}).items.push(item);
+	}
+
+	return nested;
+}
+
 function showTruncatedWarnings(warnings: readonly RollupWarning[]): void {
-	const nestedByModule = nest(warnings, 'id');
+	const nestedByModule = nestByKey(warnings, 'id');
 
 	const displayedByModule = nestedByModule.length > 5 ? nestedByModule.slice(0, 3) : nestedByModule;
 	for (const { key: id, items } of displayedByModule) {
